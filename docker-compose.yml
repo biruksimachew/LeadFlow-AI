@@ -1,0 +1,19 @@
+services:
+
+  api:
+    build:
+      context: ./apps/api
+
+    container_name: leadflow-api
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - ./apps/api/app:/app/app
+
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: ${DATABASE_URL}
+
+    restart: unless-stopped
