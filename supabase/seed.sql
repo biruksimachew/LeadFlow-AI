@@ -30,3 +30,20 @@ values (
     0,
     'RECEIVED'
 );
+
+
+insert into public.service_areas (
+    zone_code,
+    display_name,
+    postal_codes
+)
+values (
+    'north',
+    'North District',
+    array[
+        '10021',
+        '10022',
+        '10023'
+    ]
+)
+on conflict (zone_code) do nothing;

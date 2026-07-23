@@ -30,8 +30,10 @@ async def _get_existing_intake(
     row = await connection.fetchrow(
         """
         select
+            se.lead_id,
             se.intake_id,
             se.correlation_id,
+            se.ingestion_status,
             se.normalized_payload,
             l.status
         from public.lead_source_events se
@@ -52,15 +54,22 @@ async def _get_existing_intake(
         normalized_payload = json.loads(normalized_payload)
 
     return {
+        "lead_id": (
+            str(row["lead_id"])
+            if row["lead_id"]
+            else None
+        ),
         "intake_id": row["intake_id"],
         "correlation_id": row["correlation_id"],
         "status": row["status"] or "RECEIVED",
+        "ingestion_status": row["ingestion_status"],
         "normalized_payload": normalized_payload,
         "replayed": True,
-        "duplicate": False,
+        "duplicate": (
+            row["ingestion_status"] == "DUPLICATE"
+        ),
         "duplicate_match_fields": [],
     }
-
 
 
 
@@ -303,9 +312,11 @@ async def persist_received_lead(
                 )
 
             return {
+                "lead_id": str(duplicate["lead_id"]),
                 "intake_id": intake_id,
                 "correlation_id": correlation_id,
                 "status": "DUPLICATE",
+                "ingestion_status": "DUPLICATE",
                 "normalized_payload": normalized_lead.model_dump(
                     mode="json"
                 ),
@@ -420,9 +431,11 @@ async def persist_received_lead(
             raise
 
     return {
+        "lead_id": str(lead_id),
         "intake_id": intake_id,
         "correlation_id": correlation_id,
         "status": "RECEIVED",
+        "ingestion_status": "PROCESSED",
         "normalized_payload": normalized_lead.model_dump(
             mode="json"
         ),
