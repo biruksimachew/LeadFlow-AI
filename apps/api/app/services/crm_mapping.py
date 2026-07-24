@@ -9,6 +9,7 @@ def build_contact_properties(
     status: str,
     correlation_id: str,
     service_zone: str | None,
+    owner_id: str | None = None,
 ) -> dict[str, str]:
 
     first_name, last_name = split_name(
@@ -30,6 +31,9 @@ def build_contact_properties(
         "leadflow_correlation_id": (
             correlation_id
         ),
+
+        # HubSpot standard lifecycle property
+        "lifecyclestage": "lead",
     }
 
     if lead.email_normalized:
@@ -51,5 +55,10 @@ def build_contact_properties(
         properties[
             "leadflow_service_zone"
         ] = service_zone
+
+    if owner_id:
+        properties[
+            "hubspot_owner_id"
+        ] = owner_id
 
     return properties

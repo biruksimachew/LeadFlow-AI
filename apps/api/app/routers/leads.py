@@ -31,9 +31,12 @@ from app.services.qualification import qualify_lead
 from app.services.ai_pipeline import (
     run_ai_assessment,
 )
+from app.services.routing import route_lead
 from app.services.crm_pipeline import run_crm_sync
-import logging
 
+
+import logging
+routing_result = None
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +250,55 @@ async def intake_lead(
                     ) from exc
 
 
+            # ----------------------------------------------
+            # Owner routing
+            # ----------------------------------------------
+
+            routing_result = None
+
+            if (
+                qualification_record is not None
+                and result["status"] in {
+                    "QUALIFIED_HOT",
+                    "QUALIFIED_WARM",
+                    "COLD",
+                }
+            ):
+
+                async with (
+                    request.app.state.db_pool.acquire()
+                    as connection
+                ):
+
+                    async with connection.transaction():
+
+                        breakdown = (
+                            qualification_record.get(
+                                "score_breakdown"
+                            )
+                            or {}
+                        )
+
+                        service_zone = (
+                            breakdown
+                            .get("service_area", {})
+                            .get("zone")
+                        )
+
+                        routing_result = await route_lead(
+                            connection,
+                            lead_id=result["lead_id"],
+                            correlation_id=result[
+                                "correlation_id"
+                            ],
+                            service_type=(
+                                processing_lead
+                                .service_type
+                                .value
+                            ),
+                            service_zone=service_zone,
+                        )
+
 
             # ----------------------------------------------
             # CRM synchronization
@@ -265,6 +317,12 @@ async def intake_lead(
                         lead=processing_lead,
                         qualification=qualification_record,
                         final_status=result["status"],
+
+                        owner_id=(
+                            routing_result.owner_id
+                            if routing_result
+                            else None
+                        ),
                     )
 
                 except (
