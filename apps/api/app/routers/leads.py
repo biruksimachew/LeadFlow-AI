@@ -31,7 +31,7 @@ from app.services.qualification import qualify_lead
 from app.services.ai_pipeline import (
     run_ai_assessment,
 )
-
+from app.services.crm_pipeline import run_crm_sync
 import logging
 
 
@@ -245,6 +245,59 @@ async def intake_lead(
                             ),
                         },
                     ) from exc
+
+
+
+            # ----------------------------------------------
+            # CRM synchronization
+            # ----------------------------------------------
+
+            if qualification_record is not None:
+
+                try:
+
+                    await run_crm_sync(
+                        request.app.state.db_pool,
+                        lead_id=result["lead_id"],
+                        correlation_id=result[
+                            "correlation_id"
+                        ],
+                        lead=processing_lead,
+                        qualification=qualification_record,
+                        final_status=result["status"],
+                    )
+
+                except (
+                    asyncpg.PostgresError,
+                    OSError,
+                ) as exc:
+
+                    raise HTTPException(
+                        status_code=(
+                            status.HTTP_503_SERVICE_UNAVAILABLE
+                        ),
+                        detail={
+                            "code": (
+                                "CRM_STATE_PERSISTENCE_ERROR"
+                            ),
+                            "correlation_id": result[
+                                "correlation_id"
+                            ],
+                            "message": (
+                                "Lead is stored, but CRM state "
+                                "could not be persisted. Retry "
+                                "using the same Idempotency-Key."
+                            ),
+                        },
+                    ) from exc
+
+
+
+
+            
+
+
+                
     except DuplicateIdentityConflict as exc:
 
         raise HTTPException(

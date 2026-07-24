@@ -7,7 +7,12 @@ from app.database import (
     database_is_alive,
 )
 from app.routers.leads import router as leads_router
-
+from app.providers.crm.factory import (
+    build_crm_provider,
+)
+from app.providers.crm.base import (
+    CRMProviderError,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,5 +76,50 @@ async def database_health(
         "database": "reachable",
     }
 
+
+
+
+@app.get(
+    "/health/hubspot",
+    tags=["System"],
+)
+async def hubspot_health() -> dict[str, str]:
+
+    provider = None
+
+    try:
+
+        provider = build_crm_provider()
+
+        healthy = await provider.health_check()
+
+        if not healthy:
+            raise HTTPException(
+                status_code=503,
+                detail="HubSpot unavailable.",
+            )
+
+        return {
+            "status": "ok",
+            "hubspot": "reachable",
+        }
+
+    except CRMProviderError as exc:
+
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": exc.code,
+                "message": exc.message,
+            },
+        ) from exc
+
+    finally:
+
+        if (
+            provider is not None
+            and hasattr(provider, "close")
+        ):
+            await provider.close()
 
 app.include_router(leads_router)

@@ -20,4 +20,19 @@ class Settings(BaseSettings):
 
     ai_timeout_seconds: float = 20.0
 
+    hubspot_provider: str = "hubspot"
+
+    hubspot_access_token: str | None = None
+
+    hubspot_api_base_url: str = (
+        "https://api.hubapi.com"
+    )
+
+    hubspot_api_version: str = "2026-03"
+
+    hubspot_timeout_seconds: float = 15.0
+
+    hubspot_deal_pipeline_id: str | None = None
+    hubspot_deal_stage_id: str | None = None
+
 settings = Settings()
