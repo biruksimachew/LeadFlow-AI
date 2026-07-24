@@ -28,6 +28,14 @@ from app.repositories.qualification import (
 )
 
 from app.services.qualification import qualify_lead
+from app.services.ai_pipeline import (
+    run_ai_assessment,
+)
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/leads",
@@ -75,30 +83,39 @@ async def intake_lead(
 
 
 
+        processing_lead = NormalizedLead.model_validate(
+            result["normalized_payload"]
+        )
+
+
+        qualification_record = None
+
 
         if not result["duplicate"]:
 
             try:
-                async with request.app.state.db_pool.acquire() as connection:
 
-                    existing_qualification = (
+                async with (
+                    request.app.state.db_pool.acquire()
+                    as connection
+                ):
+
+                    qualification_record = (
                         await get_existing_qualification(
                             connection,
                             result["lead_id"],
                         )
                     )
 
-                    if existing_qualification is not None:
+                    # ------------------------------------------
+                    # Deterministic qualification
+                    # ------------------------------------------
 
-                        result["status"] = (
-                            existing_qualification["status"]
-                        )
-
-                    else:
+                    if qualification_record is None:
 
                         qualification = await qualify_lead(
                             connection,
-                            normalized_lead,
+                            processing_lead,
                         )
 
                         async with connection.transaction():
@@ -112,19 +129,51 @@ async def intake_lead(
                                 result=qualification,
                             )
 
-                        result["status"] = qualification.status
+                        qualification_record = (
+                            await get_existing_qualification(
+                                connection,
+                                result["lead_id"],
+                            )
+                        )
 
-            except (asyncpg.PostgresError, OSError):
-                # Database/infrastructure problem.
-                #
-                # Intake is already durable. A retry using the same
-                # Idempotency-Key will resume missing qualification.
-                raise
+                    result["status"] = (
+                        qualification_record[
+                            "final_status"
+                        ]
+                    )
+
+            except (
+                asyncpg.PostgresError,
+                OSError,
+            ) as exc:
+
+                raise HTTPException(
+                    status_code=(
+                        status.HTTP_503_SERVICE_UNAVAILABLE
+                    ),
+                    detail={
+                        "code": (
+                            "QUALIFICATION_DATABASE_UNAVAILABLE"
+                        ),
+                        "correlation_id": result[
+                            "correlation_id"
+                        ],
+                        "message": (
+                            "Lead is stored, but qualification "
+                            "could not be completed. Retry using "
+                            "the same Idempotency-Key."
+                        ),
+                    },
+                ) from exc
 
             except Exception as exc:
 
                 try:
-                    async with request.app.state.db_pool.acquire() as connection:
+
+                    async with (
+                        request.app.state.db_pool.acquire()
+                        as connection
+                    ):
 
                         async with connection.transaction():
 
@@ -140,11 +189,62 @@ async def intake_lead(
                                 error_message=str(exc),
                             )
 
-                except (asyncpg.PostgresError, OSError):
+                except (
+                    asyncpg.PostgresError,
+                    OSError,
+                ):
                     raise
 
                 result["status"] = "REVIEW_REQUIRED"
 
+
+            # ----------------------------------------------
+            # AI assessment
+            # ----------------------------------------------
+
+            if qualification_record is not None:
+
+                try:
+
+                    result["status"] = (
+                        await run_ai_assessment(
+                            request.app.state.db_pool,
+                            lead_id=result["lead_id"],
+                            correlation_id=result[
+                                "correlation_id"
+                            ],
+                            lead=processing_lead,
+                            qualification=(
+                                qualification_record
+                            ),
+                        )
+                    )
+
+                except (
+                    asyncpg.PostgresError,
+                    OSError,
+                ) as exc:
+
+                    raise HTTPException(
+                        status_code=(
+                            status.HTTP_503_SERVICE_UNAVAILABLE
+                        ),
+                        detail={
+                            "code": (
+                                "AI_STATE_PERSISTENCE_ERROR"
+                            ),
+                            "correlation_id": result[
+                                "correlation_id"
+                            ],
+                            "message": (
+                                "Lead and deterministic "
+                                "qualification are stored, but "
+                                "AI state could not be persisted. "
+                                "Retry using the same "
+                                "Idempotency-Key."
+                            ),
+                        },
+                    ) from exc
     except DuplicateIdentityConflict as exc:
 
         raise HTTPException(
@@ -166,14 +266,27 @@ async def intake_lead(
         OSError,
     ) as exc:
 
+        logger.exception(
+            "Deterministic qualification database failure. "
+            "correlation_id=%s",
+            result["correlation_id"],
+        )
+
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
             detail={
-                "code": "DATABASE_UNAVAILABLE",
-                "correlation_id": correlation_id,
+                "code": (
+                    "QUALIFICATION_DATABASE_UNAVAILABLE"
+                ),
+                "correlation_id": result[
+                    "correlation_id"
+                ],
                 "message": (
-                    "Lead intake could not be durably stored. "
-                    "Please retry."
+                    "Lead is stored, but qualification "
+                    "could not be completed. Retry using "
+                    "the same Idempotency-Key."
                 ),
             },
         ) from exc

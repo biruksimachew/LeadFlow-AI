@@ -16,4 +16,7 @@ services:
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: ${DATABASE_URL}
 
+    env_file:
+      - ./.env
+
     restart: unless-stopped
