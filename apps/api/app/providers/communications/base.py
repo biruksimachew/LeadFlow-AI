@@ -17,12 +17,14 @@ class CommunicationProviderError(RuntimeError):
         message: str,
         *,
         retryable: bool = False,
+        status_code: int | None = None,
     ):
         super().__init__(message)
 
         self.code = code
         self.message = message
         self.retryable = retryable
+        self.status_code = status_code
 
 
 class CommunicationProvider(Protocol):
@@ -33,6 +35,7 @@ class CommunicationProvider(Protocol):
         to: str,
         subject: str,
         body: str,
+        idempotency_key: str,
     ) -> MessageResult:
         ...
 

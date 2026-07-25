@@ -49,4 +49,21 @@ class Settings(BaseSettings):
 
     slack_hot_channel: str = "leadflow-hot"
 
+
+
+    communication_timeout_seconds: float = 15.0
+
+    resend_api_key: str | None = None
+
+    resend_from_email: str = (
+        "NorthStar Home Services "
+        "<onboarding@resend.dev>"
+    )
+
+    slack_bot_token: str | None = None
+
+    slack_owner_user_id: str | None = None
+
+    cal_webhook_secret: str | None = None
+
 settings = Settings()

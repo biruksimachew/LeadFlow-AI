@@ -13,7 +13,9 @@ from app.providers.crm.factory import (
 from app.providers.crm.base import (
     CRMProviderError,
 )
-
+from app.routers.webhooks import (
+    router as webhooks_router,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -123,3 +125,4 @@ async def hubspot_health() -> dict[str, str]:
             await provider.close()
 
 app.include_router(leads_router)
+app.include_router(webhooks_router)

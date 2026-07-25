@@ -13,20 +13,20 @@ class MockCommunicationProvider:
         to: str,
         subject: str,
         body: str,
+        idempotency_key: str,
     ) -> MessageResult:
-
-        payload = {
-            "to": to,
-            "subject": subject,
-            "body": body,
-        }
 
         return MessageResult(
             provider="mock",
             provider_message_id=(
                 f"mock_email_{uuid4().hex}"
             ),
-            payload=payload,
+            payload={
+                "to": to,
+                "subject": subject,
+                "body": body,
+                "idempotency_key": idempotency_key,
+            },
         )
 
     async def send_sms(
@@ -36,17 +36,15 @@ class MockCommunicationProvider:
         body: str,
     ) -> MessageResult:
 
-        payload = {
-            "to": to,
-            "body": body,
-        }
-
         return MessageResult(
-            provider="mock",
+            provider="twilio_mock",
             provider_message_id=(
                 f"mock_sms_{uuid4().hex}"
             ),
-            payload=payload,
+            payload={
+                "to": to,
+                "body": body,
+            },
         )
 
     async def send_slack(
@@ -56,15 +54,13 @@ class MockCommunicationProvider:
         body: str,
     ) -> MessageResult:
 
-        payload = {
-            "recipient": recipient,
-            "body": body,
-        }
-
         return MessageResult(
             provider="mock",
             provider_message_id=(
                 f"mock_slack_{uuid4().hex}"
             ),
-            payload=payload,
+            payload={
+                "recipient": recipient,
+                "body": body,
+            },
         )

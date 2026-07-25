@@ -61,6 +61,9 @@ async def _send_template(
             to=recipient,
             subject=subject or "",
             body=body,
+            idempotency_key=(
+                f"lead/{lead_id}/{template_key}"
+            ),
         )
 
     elif channel == "sms":
@@ -206,7 +209,7 @@ async def run_post_qualification_actions(
             consent_basis="internal",
         )
 
-        if owner_id:
+        if settings.slack_owner_user_id:
 
             await _send_template(
                 pool,
@@ -214,11 +217,12 @@ async def run_post_qualification_actions(
                 lead_id=lead_id,
                 correlation_id=correlation_id,
                 template_key="hot_slack_owner",
-                recipient=owner_id,
+                recipient=(
+                    settings.slack_owner_user_id
+                ),
                 values=values,
                 consent_basis="internal",
             )
-
         return
 
     # ========================================================
