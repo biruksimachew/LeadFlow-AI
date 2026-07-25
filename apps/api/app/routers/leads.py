@@ -33,7 +33,9 @@ from app.services.ai_pipeline import (
 )
 from app.services.routing import route_lead
 from app.services.crm_pipeline import run_crm_sync
-
+from app.services.action_pipeline import (
+    run_post_qualification_actions,
+)
 
 import logging
 routing_result = None
@@ -352,7 +354,29 @@ async def intake_lead(
 
 
 
-            
+            # ----------------------------------------------
+            # Customer communication / booking / alerts
+            # ----------------------------------------------
+
+            if qualification_record is not None:
+
+                await run_post_qualification_actions(
+                    request.app.state.db_pool,
+                    lead_id=result["lead_id"],
+                    correlation_id=result[
+                        "correlation_id"
+                    ],
+                    lead=processing_lead,
+                    score=qualification_record["score"],
+                    final_status=result["status"],
+                    owner_id=(
+                        routing_result.owner_id
+                        if routing_result
+                        else None
+                    ),
+                )
+
+                        
 
 
                 

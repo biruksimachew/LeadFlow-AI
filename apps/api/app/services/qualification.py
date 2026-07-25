@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 import json
+
 import asyncpg
 
 from app.models.lead import NormalizedLead
@@ -14,6 +15,63 @@ SUPPORTED_SERVICES = {
 }
 
 
+# ============================================================
+# Timeline/readiness evidence
+#
+# These phrases do NOT provide score weights.
+# The weights remain database configuration.
+#
+# This is deterministic text matching, not AI classification.
+# ============================================================
+
+EXPLICIT_APPOINTMENT_PHRASES = (
+    "book an appointment",
+    "book appointment",
+    "schedule an appointment",
+    "schedule appointment",
+    "make an appointment",
+    "set up an appointment",
+    "book a visit",
+    "schedule a visit",
+    "book a service",
+    "schedule service",
+    "book someone",
+    "schedule someone",
+)
+
+NEAR_TERM_PHRASES = (
+    "as soon as possible",
+    "asap",
+    "right away",
+    "immediately",
+    "today",
+    "tomorrow",
+    "this week",
+    "within 24 hours",
+    "within a day",
+    "next few days",
+    "need someone soon",
+    "need someone to come",
+    "send someone",
+    "come out soon",
+)
+
+EXPLORATORY_PHRASES = (
+    "get a quote",
+    "request a quote",
+    "need a quote",
+    "get an estimate",
+    "need an estimate",
+    "how much",
+    "looking into",
+    "thinking about",
+    "considering",
+    "planning",
+    "wondering",
+    "more information",
+)
+
+
 @dataclass
 class QualificationResult:
     score: int
@@ -22,13 +80,20 @@ class QualificationResult:
     hard_rule_result: str | None
 
 
+# ============================================================
+# Configuration
+# ============================================================
+
+
 async def load_qualification_config(
     connection: asyncpg.Connection,
 ) -> dict[str, Any]:
 
     rows = await connection.fetch(
         """
-        select config_key, config_value
+        select
+            config_key,
+            config_value
         from public.qualification_config
         where active = true;
         """
@@ -37,22 +102,29 @@ async def load_qualification_config(
     config: dict[str, Any] = {}
 
     for row in rows:
+
         value = row["config_value"]
 
         # asyncpg may return json/jsonb as a JSON string.
-        # Convert it into normal Python objects before use.
         if isinstance(value, str):
             value = json.loads(value)
 
         if not isinstance(value, dict):
             raise ValueError(
-                f"Qualification config '{row['config_key']}' "
+                f"Qualification config "
+                f"'{row['config_key']}' "
                 "must contain a JSON object."
             )
 
         config[row["config_key"]] = value
 
     return config
+
+
+# ============================================================
+# Service area
+# ============================================================
+
 
 async def determine_service_area(
     connection: asyncpg.Connection,
@@ -64,7 +136,7 @@ async def determine_service_area(
     Match configured postal codes against normalized
     location text.
 
-    Later this can be replaced by structured address
+    This can later be replaced by structured address
     parsing without changing the qualification engine.
     """
 
@@ -88,6 +160,11 @@ async def determine_service_area(
                 return True, row["zone_code"]
 
     return False, None
+
+
+# ============================================================
+# Completeness
+# ============================================================
 
 
 def calculate_completeness(
@@ -120,6 +197,69 @@ def calculate_completeness(
     return "partial"
 
 
+# ============================================================
+# Timeline / readiness
+# ============================================================
+
+
+def determine_timeline_readiness(
+    lead: NormalizedLead,
+) -> tuple[str, str]:
+    """
+    Determine readiness only from explicit customer wording.
+
+    We deliberately do not infer readiness from urgency alone
+    because urgency already receives its own score.
+
+    Returns:
+        (readiness_level, evidence)
+    """
+
+    message = (
+        lead.message or ""
+    ).strip().lower()
+
+    if not message:
+        return (
+            "none",
+            "no_message_evidence",
+        )
+
+    for phrase in EXPLICIT_APPOINTMENT_PHRASES:
+
+        if phrase in message:
+            return (
+                "explicit_appointment",
+                phrase,
+            )
+
+    for phrase in NEAR_TERM_PHRASES:
+
+        if phrase in message:
+            return (
+                "near_term",
+                phrase,
+            )
+
+    for phrase in EXPLORATORY_PHRASES:
+
+        if phrase in message:
+            return (
+                "exploratory",
+                phrase,
+            )
+
+    return (
+        "none",
+        "no_readiness_evidence",
+    )
+
+
+# ============================================================
+# Score → status
+# ============================================================
+
+
 def status_from_score(
     score: int,
     score_bands: dict[str, int],
@@ -137,6 +277,11 @@ def status_from_score(
     return "REVIEW_REQUIRED"
 
 
+# ============================================================
+# Main deterministic qualification engine
+# ============================================================
+
+
 async def qualify_lead(
     connection: asyncpg.Connection,
     lead: NormalizedLead,
@@ -152,9 +297,11 @@ async def qualify_lead(
     # HARD RULE: service area
     # --------------------------------------------------------
 
-    in_service_area, zone = await determine_service_area(
-        connection,
-        lead.location_raw,
+    in_service_area, zone = (
+        await determine_service_area(
+            connection,
+            lead.location_raw,
+        )
     )
 
     service_area_points = (
@@ -175,15 +322,18 @@ async def qualify_lead(
             score=service_area_points,
             status="DISQUALIFIED",
             breakdown=breakdown,
-            hard_rule_result="OUTSIDE_SERVICE_AREA",
+            hard_rule_result=(
+                "OUTSIDE_SERVICE_AREA"
+            ),
         )
 
     # --------------------------------------------------------
-    # Supported service
+    # HARD RULE: supported service
     # --------------------------------------------------------
 
     supported_service = (
-        lead.service_type.value in SUPPORTED_SERVICES
+        lead.service_type.value
+        in SUPPORTED_SERVICES
     )
 
     service_points = (
@@ -207,16 +357,20 @@ async def qualify_lead(
             score=service_area_points,
             status="REVIEW_REQUIRED",
             breakdown=breakdown,
-            hard_rule_result="UNSUPPORTED_SERVICE",
+            hard_rule_result=(
+                "UNSUPPORTED_SERVICE"
+            ),
         )
 
     # --------------------------------------------------------
     # Urgency
     # --------------------------------------------------------
 
-    urgency_points = config["urgency_points"].get(
-        lead.urgency.value,
-        0,
+    urgency_points = (
+        config["urgency_points"].get(
+            lead.urgency.value,
+            0,
+        )
     )
 
     breakdown["urgency"] = {
@@ -225,10 +379,54 @@ async def qualify_lead(
     }
 
     # --------------------------------------------------------
+    # Budget / fit
+    #
+    # No structured budget field currently exists.
+    # Do not invent customer budget.
+    # --------------------------------------------------------
+
+    breakdown["budget_fit"] = {
+        "points": 0,
+        "reason": "not_provided",
+    }
+
+    budget_points = 0
+
+    # --------------------------------------------------------
+    # Timeline / readiness
+    # --------------------------------------------------------
+
+    (
+        readiness_level,
+        readiness_evidence,
+    ) = determine_timeline_readiness(
+        lead
+    )
+
+    readiness_config = config[
+        "timeline_readiness_points"
+    ]
+
+    readiness_points = (
+        readiness_config.get(
+            readiness_level,
+            0,
+        )
+    )
+
+    breakdown["timeline_readiness"] = {
+        "points": readiness_points,
+        "level": readiness_level,
+        "evidence": readiness_evidence,
+    }
+
+    # --------------------------------------------------------
     # Data completeness
     # --------------------------------------------------------
 
-    completeness = calculate_completeness(lead)
+    completeness = calculate_completeness(
+        lead
+    )
 
     completeness_points = config[
         "data_completeness_points"
@@ -256,35 +454,29 @@ async def qualify_lead(
     }
 
     # --------------------------------------------------------
-    # Budget + readiness
-    #
-    # No reliable structured information exists yet.
-    # The client brief explicitly says not to invent values.
+    # Final deterministic score
     # --------------------------------------------------------
-
-    breakdown["budget_fit"] = {
-        "points": 0,
-        "reason": "not_provided",
-    }
-
-    breakdown["timeline_readiness"] = {
-        "points": 0,
-        "reason": "not_structured_yet",
-    }
 
     score = (
         service_area_points
         + service_points
         + urgency_points
+        + budget_points
+        + readiness_points
         + completeness_points
         + source_points
     )
 
-    score = min(max(score, 0), 100)
+    score = min(
+        max(score, 0),
+        100,
+    )
 
-    qualification_status = status_from_score(
-        score,
-        config["score_bands"],
+    qualification_status = (
+        status_from_score(
+            score,
+            config["score_bands"],
+        )
     )
 
     return QualificationResult(

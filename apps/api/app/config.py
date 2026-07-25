@@ -35,4 +35,18 @@ class Settings(BaseSettings):
     hubspot_deal_pipeline_id: str | None = None
     hubspot_deal_stage_id: str | None = None
 
+    communication_provider: str = "mock"
+
+    booking_provider: str = "configured"
+
+    booking_base_url: str = (
+        "https://cal.com/northstar-demo/service"
+    )
+
+    dashboard_base_url: str = (
+        "http://localhost:3000"
+    )
+
+    slack_hot_channel: str = "leadflow-hot"
+
 settings = Settings()
