@@ -246,3 +246,110 @@ export async function getLeadAppointments(
 
   return (data ?? []) as Appointment[];
 }
+
+export type ReviewQueueLead =
+  LeadListItem & {
+    message: string | null;
+    source: string | null;
+  };
+
+
+export async function getReviewQueue() {
+  const supabase = await createClient();
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("leads")
+    .select(
+      `
+        id,
+        correlation_id,
+        full_name,
+        email_normalized,
+        phone_e164,
+        service_type,
+        location_text,
+        service_zone,
+        urgency,
+        score,
+        status,
+        assigned_owner_id,
+        hubspot_contact_id,
+        hubspot_deal_id,
+        appointment_status,
+        last_error_code,
+        message,
+        source,
+        created_at,
+        updated_at
+      `,
+    )
+    .eq(
+      "status",
+      "REVIEW_REQUIRED",
+    )
+    .order("created_at", {
+      ascending: true,
+    });
+
+  if (error) {
+    throw new Error(
+      `Unable to load review queue: ${error.message}`,
+    );
+  }
+
+  return (data ?? []) as ReviewQueueLead[];
+}
+
+
+export async function getReviewReason(
+  leadId: string,
+) {
+  const supabase = await createClient();
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("workflow_events")
+    .select(
+      `
+        id,
+        event_type,
+        provider,
+        result,
+        details,
+        error_code,
+        error_message,
+        created_at
+      `,
+    )
+    .eq("lead_id", leadId)
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(20);
+
+  if (error) {
+    throw new Error(
+      `Unable to load review reason: ${error.message}`,
+    );
+  }
+
+  const events = data ?? [];
+
+  return (
+    events.find(
+      (event) =>
+        event.event_type
+          ?.toUpperCase()
+          .includes("REVIEW") ||
+        event.error_code ||
+        event.result === "failed",
+    ) ??
+    events[0] ??
+    null
+  );
+}

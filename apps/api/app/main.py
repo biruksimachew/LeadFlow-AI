@@ -16,6 +16,9 @@ from app.providers.crm.base import (
 from app.routers.webhooks import (
     router as webhooks_router,
 )
+from app.routers.overrides import (
+    router as overrides_router,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -126,3 +129,6 @@ async def hubspot_health() -> dict[str, str]:
 
 app.include_router(leads_router)
 app.include_router(webhooks_router)
+app.include_router(
+    overrides_router
+)
