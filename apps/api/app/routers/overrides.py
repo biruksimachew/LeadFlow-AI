@@ -1,5 +1,5 @@
 import json
-import os
+import logging
 from typing import Literal
 
 import asyncpg
@@ -7,6 +7,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
 )
 from pydantic import (
@@ -19,8 +20,13 @@ from app.security.operator_auth import (
     OperatorIdentity,
     require_management_operator,
 )
-import logging
+from app.services.continuation import (
+    run_lead_continuation,
+)
+
+
 logger = logging.getLogger(__name__)
+
 
 router = APIRouter(
     prefix="/api/v1/leads",
@@ -82,240 +88,247 @@ class LeadOverrideRequest(BaseModel):
 async def override_lead(
     lead_id: str,
     payload: LeadOverrideRequest,
+    request: Request,
     operator: OperatorIdentity = Depends(
         require_management_operator
     ),
 ):
-    connection = await asyncpg.connect(
-        os.environ["DATABASE_URL"]
-    )
+    previous_values: dict[
+        str,
+        object,
+    ] = {}
+
+    new_values: dict[
+        str,
+        object,
+    ] = {}
+
+    override_id = None
 
     try:
-        async with connection.transaction():
+        async with (
+            request.app.state.db_pool.acquire()
+            as connection
+        ):
+            async with connection.transaction():
 
-            lead = await connection.fetchrow(
-                """
-                select
-                    id,
-                    correlation_id,
-                    status,
-                    score,
-                    assigned_owner_id
-                from public.leads
-                where id = $1::uuid
-                for update;
-                """,
-                lead_id,
-            )
-
-            if lead is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail={
-                        "code": (
-                            "LEAD_NOT_FOUND"
-                        ),
-                    },
+                lead = await connection.fetchrow(
+                    """
+                    select
+                        id,
+                        correlation_id,
+                        status,
+                        score,
+                        assigned_owner_id
+                    from public.leads
+                    where id = $1::uuid
+                    for update;
+                    """,
+                    lead_id,
                 )
 
-            previous_values: dict[
-                str,
-                object,
-            ] = {}
+                if lead is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail={
+                            "code": (
+                                "LEAD_NOT_FOUND"
+                            ),
+                        },
+                    )
 
-            new_values: dict[
-                str,
-                object,
-            ] = {}
+                if (
+                    payload.status
+                    is not None
+                    and payload.status
+                    != lead["status"]
+                ):
+                    previous_values[
+                        "status"
+                    ] = lead["status"]
 
-            if (
-                payload.status
-                is not None
-                and payload.status
-                != lead["status"]
-            ):
-                previous_values[
-                    "status"
-                ] = lead["status"]
+                    new_values[
+                        "status"
+                    ] = payload.status
 
-                new_values[
-                    "status"
-                ] = payload.status
+                if (
+                    payload.score
+                    is not None
+                    and payload.score
+                    != lead["score"]
+                ):
+                    previous_values[
+                        "score"
+                    ] = lead["score"]
 
-            if (
-                payload.score
-                is not None
-                and payload.score
-                != lead["score"]
-            ):
-                previous_values[
-                    "score"
-                ] = lead["score"]
+                    new_values[
+                        "score"
+                    ] = payload.score
 
-                new_values[
-                    "score"
-                ] = payload.score
+                if (
+                    payload.owner_id
+                    is not None
+                    and payload.owner_id
+                    != lead[
+                        "assigned_owner_id"
+                    ]
+                ):
+                    previous_values[
+                        "assigned_owner_id"
+                    ] = lead[
+                        "assigned_owner_id"
+                    ]
 
-            if (
-                payload.owner_id
-                is not None
-                and payload.owner_id
-                != lead[
-                    "assigned_owner_id"
-                ]
-            ):
-                previous_values[
-                    "assigned_owner_id"
-                ] = lead[
-                    "assigned_owner_id"
-                ]
+                    new_values[
+                        "assigned_owner_id"
+                    ] = payload.owner_id
 
-                new_values[
-                    "assigned_owner_id"
-                ] = payload.owner_id
-
-            if not new_values:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail={
-                        "code": (
-                            "NO_OVERRIDE_CHANGE"
+                if not new_values:
+                    raise HTTPException(
+                        status_code=(
+                            status.HTTP_409_CONFLICT
                         ),
-                        "message": (
-                            "Requested values "
-                            "already match the lead."
-                        ),
-                    },
+                        detail={
+                            "code": (
+                                "NO_OVERRIDE_CHANGE"
+                            ),
+                            "message": (
+                                "Requested values "
+                                "already match "
+                                "the lead."
+                            ),
+                        },
+                    )
+
+                new_status = (
+                    payload.status
+                    if payload.status
+                    is not None
+                    else lead["status"]
                 )
 
-            new_status = (
-                payload.status
-                if payload.status
-                is not None
-                else lead["status"]
-            )
+                new_score = (
+                    payload.score
+                    if payload.score
+                    is not None
+                    else lead["score"]
+                )
 
-            new_score = (
-                payload.score
-                if payload.score
-                is not None
-                else lead["score"]
-            )
+                new_owner = (
+                    payload.owner_id
+                    if payload.owner_id
+                    is not None
+                    else lead[
+                        "assigned_owner_id"
+                    ]
+                )
 
-            new_owner = (
-                payload.owner_id
-                if payload.owner_id
-                is not None
-                else lead[
-                    "assigned_owner_id"
-                ]
-            )
+                await connection.execute(
+                    """
+                    update public.leads
+                    set
+                        status = $2,
+                        score = $3,
+                        assigned_owner_id = $4,
+                        updated_at = now()
+                    where id = $1::uuid;
+                    """,
+                    lead_id,
+                    new_status,
+                    new_score,
+                    new_owner,
+                )
 
-            await connection.execute(
-                """
-                update public.leads
-                set
-                    status = $2,
-                    score = $3,
-                    assigned_owner_id = $4,
-                    updated_at = now()
-                where id = $1::uuid;
-                """,
-                lead_id,
-                new_status,
-                new_score,
-                new_owner,
-            )
+                override_id = (
+                    await connection.fetchval(
+                        """
+                        insert into
+                            public.lead_overrides (
+                                lead_id,
+                                actor_user_id,
+                                actor_email,
+                                actor_role,
+                                previous_values,
+                                new_values,
+                                reason
+                            )
+                        values (
+                            $1::uuid,
+                            $2::uuid,
+                            $3,
+                            $4,
+                            $5::jsonb,
+                            $6::jsonb,
+                            $7
+                        )
+                        returning id;
+                        """,
+                        lead_id,
+                        operator.user_id,
+                        operator.email,
+                        operator.role,
+                        json.dumps(
+                            previous_values
+                        ),
+                        json.dumps(
+                            new_values
+                        ),
+                        payload.reason.strip(),
+                    )
+                )
 
-            override_id = (
-                await connection.fetchval(
+                await connection.execute(
                     """
                     insert into
-                        public.lead_overrides (
+                        public.workflow_events (
                             lead_id,
-                            actor_user_id,
-                            actor_email,
-                            actor_role,
-                            previous_values,
-                            new_values,
-                            reason
+                            correlation_id,
+                            event_type,
+                            actor_type,
+                            actor_id,
+                            provider,
+                            result,
+                            details,
+                            error_code,
+                            error_message
                         )
                     values (
                         $1::uuid,
-                        $2::uuid,
+                        $2,
+                        'HUMAN_OVERRIDE',
+                        'operator',
                         $3,
-                        $4,
-                        $5::jsonb,
-                        $6::jsonb,
-                        $7
-                    )
-                    returning id;
+                        null,
+                        'succeeded',
+                        $4::jsonb,
+                        null,
+                        null
+                    );
                     """,
                     lead_id,
+                    lead["correlation_id"],
                     operator.user_id,
-                    operator.email,
-                    operator.role,
                     json.dumps(
-                        previous_values
+                        {
+                            "override_id": str(
+                                override_id
+                            ),
+                            "previous_values": (
+                                previous_values
+                            ),
+                            "new_values": (
+                                new_values
+                            ),
+                            "reason": (
+                                payload.reason
+                                .strip()
+                            ),
+                            "actor_role": (
+                                operator.role
+                            ),
+                        }
                     ),
-                    json.dumps(
-                        new_values
-                    ),
-                    payload.reason.strip(),
                 )
-            )
-
-            await connection.execute(
-                """
-                insert into
-                    public.workflow_events (
-                        lead_id,
-                        correlation_id,
-                        event_type,
-                        actor_type,
-                        actor_id,
-                        provider,
-                        result,
-                        details,
-                        error_code,
-                        error_message
-                    )
-                values (
-                    $1::uuid,
-                    $2,
-                    'HUMAN_OVERRIDE',
-                    'operator',
-                    $3,
-                    null,
-                    'succeeded',
-                    $4::jsonb,
-                    null,
-                    null
-                );
-                """,
-                lead_id,
-                lead["correlation_id"],
-                operator.user_id,
-                json.dumps(
-                    {
-                        "override_id": str(
-                            override_id
-                        ),
-                        "previous_values": (
-                            previous_values
-                        ),
-                        "new_values": (
-                            new_values
-                        ),
-                        "reason": (
-                            payload.reason.strip()
-                        ),
-                        "actor_role": (
-                            operator.role
-                        ),
-                    }
-                ),
-            )
 
     except asyncpg.PostgresError as exc:
         logger.exception(
@@ -327,17 +340,35 @@ async def override_lead(
         )
 
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
             detail={
-                "code": "OVERRIDE_DATABASE_ERROR",
+                "code": (
+                    "OVERRIDE_DATABASE_ERROR"
+                ),
                 "message": (
-                    "Unable to persist lead override."
+                    "Unable to persist "
+                    "lead override."
                 ),
             },
         ) from exc
 
-    finally:
-        await connection.close()
+    # ========================================================
+    # Human decision is already committed here.
+    #
+    # External systems are intentionally resumed AFTER the
+    # override transaction. A HubSpot/email/Slack failure must
+    # never roll back a legitimate human decision.
+    # ========================================================
+
+    continuation = await run_lead_continuation(
+        request.app.state.db_pool,
+        lead_id=lead_id,
+        trigger="HUMAN_OVERRIDE",
+        initiated_by=operator.user_id,
+        force_crm_sync=True,
+    )
 
     return {
         "success": True,
@@ -348,6 +379,11 @@ async def override_lead(
         "previous_values": (
             previous_values
         ),
-        "new_values": new_values,
+        "new_values": (
+            new_values
+        ),
         "actor_role": operator.role,
+        "continuation": (
+            continuation.to_dict()
+        ),
     }

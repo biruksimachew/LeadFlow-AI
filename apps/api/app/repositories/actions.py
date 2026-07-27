@@ -147,6 +147,111 @@ async def persist_communication_sent(
     )
 
 
+async def persist_communication_failed(
+    connection: asyncpg.Connection,
+    *,
+    lead_id,
+    correlation_id: str,
+    channel: str,
+    template_key: str,
+    recipient: str | None,
+    provider: str,
+    error_code: str,
+    error_message: str,
+    retryable: bool,
+    consent_basis: str,
+) -> None:
+
+    payload = {
+        "retryable": retryable,
+    }
+
+    await connection.execute(
+        """
+        insert into public.communications (
+            lead_id,
+            correlation_id,
+            channel,
+            template_key,
+            recipient,
+            provider,
+            status,
+            consent_basis,
+            payload,
+            error_code,
+            error_message
+        )
+        values (
+            $1,$2,$3,$4,$5,$6,
+            'FAILED',$7,$8::jsonb,$9,$10
+        )
+        on conflict (
+            lead_id,
+            channel,
+            template_key
+        )
+        do update set
+            recipient = excluded.recipient,
+            provider = excluded.provider,
+            status = 'FAILED',
+            consent_basis = excluded.consent_basis,
+            payload = excluded.payload,
+            error_code = excluded.error_code,
+            error_message = excluded.error_message,
+            provider_message_id = null,
+            sent_at = null;
+        """,
+        lead_id,
+        correlation_id,
+        channel,
+        template_key,
+        recipient,
+        provider,
+        consent_basis,
+        json.dumps(payload),
+        error_code,
+        error_message,
+    )
+
+    await connection.execute(
+        """
+        insert into public.workflow_events (
+            lead_id,
+            correlation_id,
+            event_type,
+            actor_type,
+            provider,
+            result,
+            details,
+            error_code,
+            error_message
+        )
+        values (
+            $1,
+            $2,
+            'COMMUNICATION_FAILED',
+            'provider',
+            $3,
+            'failed',
+            $4::jsonb,
+            $5,
+            $6
+        );
+        """,
+        lead_id,
+        correlation_id,
+        provider,
+        json.dumps({
+            "channel": channel,
+            "template_key": template_key,
+            "recipient": recipient,
+            "retryable": retryable,
+        }),
+        error_code,
+        error_message,
+    )
+
+
 async def persist_communication_skipped(
     connection: asyncpg.Connection,
     *,

@@ -35,6 +35,7 @@ async def run_crm_sync(
     qualification: dict,
     final_status: str,
     owner_id: str | None = None,
+    force: bool = False,
 ) -> None:
 
     # --------------------------------------------------------
@@ -56,7 +57,8 @@ async def run_crm_sync(
         )
 
     if (
-        state
+        not force
+        and state
         and state["crm_sync_status"] == "SUCCEEDED"
     ):
         return

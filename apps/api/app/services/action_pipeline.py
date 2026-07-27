@@ -1,3 +1,6 @@
+from app.providers.communications.base import (
+    CommunicationProviderError,
+)
 from app.config import settings
 
 from app.providers.communications.factory import (
@@ -8,10 +11,10 @@ from app.repositories.actions import (
     communication_completed,
     get_or_create_booking_link,
     get_template,
+    persist_communication_failed,
     persist_communication_sent,
     persist_communication_skipped,
 )
-
 
 async def _send_template(
     pool,
@@ -55,35 +58,90 @@ async def _send_template(
 
     channel = template["channel"]
 
-    if channel == "email":
+    provider_name = {
+        "email": "resend",
+        "sms": "twilio_mock",
+        "slack": "slack",
+    }.get(
+        channel,
+        channel,
+    )
 
-        result = await provider.send_email(
-            to=recipient,
-            subject=subject or "",
-            body=body,
-            idempotency_key=(
-                f"lead/{lead_id}/{template_key}"
-            ),
+    try:
+
+        if channel == "email":
+
+            result = await provider.send_email(
+                to=recipient,
+                subject=subject or "",
+                body=body,
+                idempotency_key=(
+                    f"lead/{lead_id}/{template_key}"
+                ),
+            )
+
+        elif channel == "sms":
+
+            result = await provider.send_sms(
+                to=recipient,
+                body=body,
+            )
+
+        elif channel == "slack":
+
+            result = await provider.send_slack(
+                recipient=recipient,
+                body=body,
+            )
+
+        else:
+            raise RuntimeError(
+                f"Unsupported channel: {channel}"
+            )
+
+    except CommunicationProviderError as exc:
+
+        error_code = getattr(
+            exc,
+            "code",
+            "COMMUNICATION_PROVIDER_ERROR",
         )
 
-    elif channel == "sms":
-
-        result = await provider.send_sms(
-            to=recipient,
-            body=body,
+        error_message = getattr(
+            exc,
+            "message",
+            str(exc),
         )
 
-    elif channel == "slack":
-
-        result = await provider.send_slack(
-            recipient=recipient,
-            body=body,
+        retryable = bool(
+            getattr(
+                exc,
+                "retryable",
+                False,
+            )
         )
 
-    else:
-        raise RuntimeError(
-            f"Unsupported channel: {channel}"
-        )
+        async with pool.acquire() as connection:
+
+            async with connection.transaction():
+
+                await persist_communication_failed(
+                    connection,
+                    lead_id=lead_id,
+                    correlation_id=correlation_id,
+                    channel=channel,
+                    template_key=template_key,
+                    recipient=recipient,
+                    provider=provider_name,
+                    error_code=error_code,
+                    error_message=error_message,
+                    retryable=retryable,
+                    consent_basis=consent_basis,
+                )
+
+        # Preserve existing continuation behavior:
+        # downstream workflow records the overall failure.
+        raise
 
     async with pool.acquire() as connection:
 

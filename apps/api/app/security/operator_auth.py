@@ -4,7 +4,12 @@ import os
 import asyncpg
 import httpx
 from fastapi import Header, HTTPException, status
-
+from fastapi import (
+    Depends,
+    Header,
+    HTTPException,
+    status,
+)
 
 @dataclass(frozen=True)
 class OperatorIdentity:
@@ -154,8 +159,36 @@ async def require_management_operator(
             },
         )
 
+
+
+
+
     return OperatorIdentity(
         user_id=user_id,
         email=user.get("email"),
         role=role,
     )
+
+async def require_admin_operator(
+    operator: OperatorIdentity = Depends(
+        require_management_operator
+    ),
+) -> OperatorIdentity:
+
+    if operator.role != "ADMIN":
+        raise HTTPException(
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
+            detail={
+                "code": (
+                    "ADMIN_PERMISSION_REQUIRED"
+                ),
+                "message": (
+                    "Workflow retries require "
+                    "Administrator permission."
+                ),
+            },
+        )
+
+    return operator

@@ -19,6 +19,10 @@ from app.routers.webhooks import (
 from app.routers.overrides import (
     router as overrides_router,
 )
+
+from app.routers.retries import (
+    router as retries_router,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -27,6 +31,8 @@ async def lifespan(app: FastAPI):
     yield
 
     await app.state.db_pool.close()
+
+
 
 
 app = FastAPI(
@@ -131,4 +137,7 @@ app.include_router(leads_router)
 app.include_router(webhooks_router)
 app.include_router(
     overrides_router
+)
+app.include_router(
+    retries_router
 )
