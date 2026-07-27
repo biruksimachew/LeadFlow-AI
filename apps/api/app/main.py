@@ -23,6 +23,9 @@ from app.routers.overrides import (
 from app.routers.retries import (
     router as retries_router,
 )
+from app.routers.orchestration import (
+    router as orchestration_router,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -140,4 +143,7 @@ app.include_router(
 )
 app.include_router(
     retries_router
+)
+app.include_router(
+    orchestration_router
 )

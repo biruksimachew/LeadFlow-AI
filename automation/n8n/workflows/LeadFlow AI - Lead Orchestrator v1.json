@@ -1,0 +1,377 @@
+{
+  "name": "LeadFlow AI - Lead Orchestrator v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadflow-intake",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1088,
+        96
+      ],
+      "id": "29fa6fb1-88cc-458e-92c6-a5939c863b4b",
+      "name": "Lead Intake Webhook",
+      "webhookId": "c1f355b0-1177-4f44-a59b-e1919b474e19"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://api:8000/api/v1/orchestration/intake",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LeadFlow-Orchestrator-Token",
+              "value": "={{ $env.N8N_INTERNAL_API_TOKEN }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.headers['idempotency-key'] || ('n8n-' + $execution.id) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -848,
+        96
+      ],
+      "id": "24f29ba8-d026-486a-840f-7907118532cf",
+      "name": "1 - Intake Normalize Dedupe"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1c56ec7a-158b-4a15-89ff-4e08e6f57cb5",
+              "leftValue": "={{ $json.continue_processing }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -608,
+        96
+      ],
+      "id": "6eecc8be-23cb-4a0b-adb1-1ee57d58df85",
+      "name": "Continue After Intake?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:8000/api/v1/orchestration/leads/' + $json.lead_id + '/qualify' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LeadFlow-Orchestrator-Token",
+              "value": "={{ $env.N8N_INTERNAL_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -368,
+        -32
+      ],
+      "id": "e9a510b2-4f1f-44fe-84a7-40f4b99f6026",
+      "name": "2 - Qualify + AI"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8bc37b77-7617-4380-970e-219cc9dab274",
+              "leftValue": "={{ $json.continue_processing }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -128,
+        -32
+      ],
+      "id": "3d526dd0-1282-4f1f-96bf-a8973d305cc5",
+      "name": "Continue After Qualification?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:8000/api/v1/orchestration/leads/' + $json.lead_id + '/route' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LeadFlow-Orchestrator-Token",
+              "value": "={{ $env.N8N_INTERNAL_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        112,
+        -128
+      ],
+      "id": "98109943-2a01-4b95-b0f7-fd1b22ba7042",
+      "name": "3 - Route Owner"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:8000/api/v1/orchestration/leads/' + $json.lead_id + '/crm' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LeadFlow-Orchestrator-Token",
+              "value": "={{ $env.N8N_INTERNAL_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        352,
+        -128
+      ],
+      "id": "2568cfe4-7a88-4bc1-9d52-e778f3b7655f",
+      "name": "4 - Sync CRM"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://api:8000/api/v1/orchestration/leads/' + $json.lead_id + '/actions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-LeadFlow-Orchestrator-Token",
+              "value": "={{ $env.N8N_INTERNAL_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        -128
+      ],
+      "id": "e47e880f-8265-470c-bd97-3861892ab323",
+      "name": "5 - Customer + Staff Actions"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { ...$json, workflow_outcome: 'COMPLETED' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -128
+      ],
+      "id": "16048702-a1ae-40fd-bd8c-883f53013c97",
+      "name": "Completed"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { ...$json, workflow_outcome: 'INTAKE_STOPPED' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        256
+      ],
+      "id": "5938439a-5339-4ee6-82f7-4dc5e132a3d8",
+      "name": "Duplicate / Intake Stop"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { ...$json, workflow_outcome: ($json.review_required ? 'REVIEW_REQUIRED' : 'QUALIFICATION_STOPPED') } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        176
+      ],
+      "id": "9145db2d-b9ee-47f3-9d1e-7f5cafb22245",
+      "name": "Review / Qualification Stop"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lead Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "1 - Intake Normalize Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1 - Intake Normalize Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Continue After Intake?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue After Intake?": {
+      "main": [
+        [
+          {
+            "node": "2 - Qualify + AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate / Intake Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2 - Qualify + AI": {
+      "main": [
+        [
+          {
+            "node": "Continue After Qualification?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue After Qualification?": {
+      "main": [
+        [
+          {
+            "node": "3 - Route Owner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Review / Qualification Stop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3 - Route Owner": {
+      "main": [
+        [
+          {
+            "node": "4 - Sync CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4 - Sync CRM": {
+      "main": [
+        [
+          {
+            "node": "5 - Customer + Staff Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5 - Customer + Staff Actions": {
+      "main": [
+        [
+          {
+            "node": "Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d27c6365-43a5-4249-8bc2-6c7f69008bcf",
+  "meta": {
+    "instanceId": "ed58daf4f53b614afcc95e67db3a59d51aca66bbedf3d1ba35c203d6f45dc0c5"
+  },
+  "nodeGroups": [],
+  "id": "baaGniUjYie1vpjZ",
+  "tags": []
+}
