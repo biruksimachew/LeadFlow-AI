@@ -35,3 +35,5 @@ docker-data/
 # Secrets
 credentials/
 secrets/
+# Local Supabase Studio scratch queries
+supabase/snippets/
