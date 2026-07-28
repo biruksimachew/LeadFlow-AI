@@ -58,6 +58,11 @@ from app.services.qualification import (
 from app.services.routing import (
     route_lead,
 )
+from app.services.workflow_failure import (
+    WorkflowStageError,
+    classify_retryable_code,
+    record_workflow_failure,
+)
 
 
 router = APIRouter(
@@ -697,7 +702,8 @@ async def orchestration_crm(
                 select
                     crm_sync_status,
                     hubspot_contact_id,
-                    hubspot_deal_id
+                    hubspot_deal_id,
+                    last_error_code
                 from public.leads
                 where id = $1::uuid;
                 """,
@@ -717,15 +723,44 @@ async def orchestration_crm(
         crm_status
         != "SUCCEEDED"
     ):
+        error_code = (
+            crm_state["last_error_code"]
+            if crm_state
+            else None
+        ) or "CRM_SYNC_FAILED"
+
+        failure = WorkflowStageError(
+            code=error_code,
+            message=(
+                "CRM synchronization did not "
+                f"succeed. State={crm_status}."
+            ),
+            retryable=(
+                classify_retryable_code(
+                    error_code
+                )
+            ),
+            provider="hubspot",
+        )
+
+        await record_workflow_failure(
+            pool,
+            lead_id=lead_id,
+            correlation_id=(
+                context.correlation_id
+            ),
+            failed_action=(
+                "lead_continuation"
+            ),
+            exc=failure,
+            trigger="N8N_CRM_STAGE",
+        )
+
         raise HTTPException(
             status_code=502,
             detail={
-                "code":
-                    "CRM_SYNC_FAILED",
-
-                "lead_id":
-                    lead_id,
-
+                "code": error_code,
+                "lead_id": lead_id,
                 "crm_sync_status":
                     crm_status,
             },
@@ -836,24 +871,39 @@ async def orchestration_actions(
         ]
     )
 
-    await (
-        run_post_qualification_actions(
+    try:
+        await (
+            run_post_qualification_actions(
+                pool,
+                lead_id=lead_id,
+                correlation_id=(
+                    context.correlation_id
+                ),
+                lead=context.lead,
+                score=effective_score,
+                final_status=(
+                    context.status
+                ),
+                owner_id=(
+                    context
+                    .assigned_owner_id
+                ),
+            )
+        )
+    except Exception as exc:
+        await record_workflow_failure(
             pool,
             lead_id=lead_id,
             correlation_id=(
                 context.correlation_id
             ),
-            lead=context.lead,
-            score=effective_score,
-            final_status=(
-                context.status
+            failed_action=(
+                "lead_continuation"
             ),
-            owner_id=(
-                context
-                .assigned_owner_id
-            ),
+            exc=exc,
+            trigger="N8N_ACTIONS_STAGE",
         )
-    )
+        raise
 
     return {
         "success": True,

@@ -13,7 +13,11 @@ from app.services.crm_pipeline import run_crm_sync
 from app.services.routing import route_lead
 from app.repositories.workflow_errors import (
     resolve_workflow_error_for_action,
-    upsert_workflow_error,
+)
+from app.services.workflow_failure import (
+    WorkflowStageError,
+    classify_retryable_code,
+    record_workflow_failure,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,68 +182,6 @@ async def _load_continuation_context(
 
 
 
-def _get_failure_metadata(
-    exc: Exception,
-) -> tuple[
-    str,
-    str,
-    bool,
-    str | None,
-]:
-
-    error_code = getattr(
-        exc,
-        "code",
-        "LEAD_CONTINUATION_FAILED",
-    )
-
-    error_message = getattr(
-        exc,
-        "message",
-        str(exc),
-    )
-
-    retryable = bool(
-        getattr(
-            exc,
-            "retryable",
-            False,
-        )
-    )
-
-    provider = None
-
-    upper_code = str(
-        error_code
-    ).upper()
-
-    if upper_code.startswith(
-        "RESEND_"
-    ):
-        provider = "resend"
-
-    elif upper_code.startswith(
-        "SLACK_"
-    ):
-        provider = "slack"
-
-    elif upper_code.startswith(
-        "TWILIO_"
-    ):
-        provider = "twilio"
-
-    elif upper_code.startswith(
-        "HUBSPOT_"
-    ):
-        provider = "hubspot"
-
-    return (
-        str(error_code),
-        str(error_message),
-        retryable,
-        provider,
-    )
-
 async def run_lead_continuation(
     pool,
     *,
@@ -319,6 +261,20 @@ async def run_lead_continuation(
                     ),
                 },
             )
+
+            async with pool.acquire() as connection:
+                async with connection.transaction():
+                    await resolve_workflow_error_for_action(
+                        connection,
+                        lead_id=lead_id,
+                        failed_action=(
+                            "lead_continuation"
+                        ),
+                        resolution_notes=(
+                            "Automatic continuation was "
+                            "no longer required."
+                        ),
+                    )
 
             return ContinuationResult(
                 status="SKIPPED",
@@ -416,11 +372,25 @@ async def run_lead_continuation(
                 else None
             )
 
-            raise RuntimeError(
-                "CRM synchronization did not "
-                f"succeed. State="
-                f"{crm_sync_status}, "
-                f"error={error_code}"
+            effective_error_code = (
+                error_code
+                or "CRM_SYNC_FAILED"
+            )
+
+            raise WorkflowStageError(
+                code=effective_error_code,
+                message=(
+                    "CRM synchronization did not "
+                    f"succeed. State="
+                    f"{crm_sync_status}, "
+                    f"error={effective_error_code}"
+                ),
+                retryable=(
+                    classify_retryable_code(
+                        effective_error_code
+                    )
+                ),
+                provider="hubspot",
             )
 
         # ----------------------------------------------------
@@ -488,50 +458,40 @@ async def run_lead_continuation(
             lead_id,
             trigger,
         )
-        (
-            error_code,
-            error_message,
-            retryable,
-            provider,
-        ) = _get_failure_metadata(
-            exc
+        error_code = str(
+            getattr(
+                exc,
+                "code",
+                "LEAD_CONTINUATION_FAILED",
+            )
+        )
+        error_message = str(
+            getattr(
+                exc,
+                "message",
+                str(exc),
+            )
         )
 
         if correlation_id is not None:
-
             try:
-                async with (
-                    pool.acquire()
-                    as connection
-                ):
-                    async with (
-                        connection.transaction()
-                    ):
-                        await upsert_workflow_error(
-                            connection,
-                            lead_id=lead_id,
-                            correlation_id=(
-                                correlation_id
-                            ),
-                            failed_action=(
-                                "lead_continuation"
-                            ),
-                            provider=provider,
-                            error_code=(
-                                error_code
-                            ),
-                            error_message=(
-                                error_message[
-                                    :1000
-                                ]
-                            ),
-                            retryable=retryable,
-                        )
-
+                await record_workflow_failure(
+                    pool,
+                    lead_id=lead_id,
+                    correlation_id=(
+                        correlation_id
+                    ),
+                    failed_action=(
+                        "lead_continuation"
+                    ),
+                    exc=exc,
+                    trigger=trigger,
+                    initiated_by=initiated_by,
+                )
             except Exception:
                 logger.exception(
-                    "Unable to persist "
-                    "workflow error."
+                    "Unable to persist and "
+                    "schedule workflow failure."
                 )
 
         if correlation_id is not None:

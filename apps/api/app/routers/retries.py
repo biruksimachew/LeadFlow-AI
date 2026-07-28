@@ -87,6 +87,25 @@ async def retry_workflow_error(
         )
 
     if (
+        workflow_error["status"]
+        == "RETRYING"
+    ):
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+            ),
+            detail={
+                "code": (
+                    "WORKFLOW_RETRY_IN_PROGRESS"
+                ),
+                "message": (
+                    "This workflow error is "
+                    "already being retried."
+                ),
+            },
+        )
+
+    if (
         workflow_error["failed_action"]
         != "lead_continuation"
     ):
@@ -238,10 +257,21 @@ async def retry_workflow_error(
             continuation.error_code,
         )
 
+    async with pool.acquire() as connection:
+        final_error_state = (
+            await get_workflow_error(
+                connection,
+                error_id,
+            )
+        )
+
     return {
         "success": (
             continuation.status
-            == "SUCCEEDED"
+            in {
+                "SUCCEEDED",
+                "SKIPPED",
+            }
         ),
         "workflow_error_id": error_id,
         "lead_id": str(
@@ -252,6 +282,23 @@ async def retry_workflow_error(
         ),
         "retry_status": (
             continuation.status
+        ),
+        "workflow_error_status": (
+            final_error_state["status"]
+            if final_error_state
+            else None
+        ),
+        "next_retry_at": (
+            final_error_state[
+                "next_retry_at"
+            ].isoformat()
+            if (
+                final_error_state
+                and final_error_state[
+                    "next_retry_at"
+                ]
+            )
+            else None
         ),
         "error_code": (
             continuation.error_code

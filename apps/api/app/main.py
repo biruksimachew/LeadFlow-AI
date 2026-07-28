@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request, status
 
@@ -26,14 +27,48 @@ from app.routers.retries import (
 from app.routers.orchestration import (
     router as orchestration_router,
 )
+from app.config import settings
+from app.services.retry_worker import (
+    WorkflowRetryWorker,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.db_pool = (
+        await create_database_pool()
+    )
+    app.state.retry_worker = None
+    app.state.retry_worker_task = None
 
-    app.state.db_pool = await create_database_pool()
+    if settings.workflow_retry_enabled:
+        retry_worker = WorkflowRetryWorker(
+            app.state.db_pool
+        )
+        retry_task = asyncio.create_task(
+            retry_worker.run_forever(),
+            name="leadflow-workflow-retry-worker",
+        )
 
-    yield
+        app.state.retry_worker = retry_worker
+        app.state.retry_worker_task = retry_task
 
-    await app.state.db_pool.close()
+    try:
+        yield
+    finally:
+        retry_worker = (
+            app.state.retry_worker
+        )
+        retry_task = (
+            app.state.retry_worker_task
+        )
+
+        if retry_worker is not None:
+            await retry_worker.stop()
+
+        if retry_task is not None:
+            with suppress(asyncio.CancelledError):
+                await retry_task
+
+        await app.state.db_pool.close()
 
 
 
@@ -91,6 +126,42 @@ async def database_health(
     }
 
 
+
+
+@app.get(
+    "/health/retry-worker",
+    tags=["System"],
+)
+async def retry_worker_health(
+    request: Request,
+) -> dict[str, str | bool]:
+    task = request.app.state.retry_worker_task
+
+    if not settings.workflow_retry_enabled:
+        return {
+            "status": "disabled",
+            "enabled": False,
+            "running": False,
+        }
+
+    running = bool(
+        task is not None
+        and not task.done()
+    )
+
+    if not running:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail="Retry worker is not running.",
+        )
+
+    return {
+        "status": "ok",
+        "enabled": True,
+        "running": True,
+    }
 
 
 @app.get(
