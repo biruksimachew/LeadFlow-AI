@@ -5,6 +5,7 @@ import sys
 import asyncpg
 import httpx
 
+ 
 
 ALLOWED_ROLES = {
     "ADMIN",
@@ -120,6 +121,35 @@ async def create_user(
     return user_id
 
 
+
+async def sync_user_credentials(
+    client: httpx.AsyncClient,
+    *,
+    auth_base_url: str,
+    admin_headers: dict[str, str],
+    user_id: str,
+    email: str,
+    password: str,
+    display_name: str,
+) -> None:
+    response = await client.put(
+        f"{auth_base_url}/admin/users/{user_id}",
+        headers=admin_headers,
+        json={
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {
+                "display_name": display_name,
+                "leadflow_demo_user": True,
+            },
+        },
+    )
+
+    response.raise_for_status()
+
+
+
 async def main() -> int:
     database_url = os.getenv("DATABASE_URL")
     auth_base_url = os.getenv("SUPABASE_AUTH_URL")
@@ -220,6 +250,16 @@ async def main() -> int:
             )
             created = True
 
+        await sync_user_credentials(
+            client,
+            auth_base_url=auth_base_url,
+            admin_headers=headers,
+            user_id=user_id,
+            email=email,
+            password=password,
+            display_name=display_name,
+        )
+
     connection = await asyncpg.connect(database_url)
 
     try:
@@ -259,8 +299,7 @@ async def main() -> int:
     print(f" - role: {role}")
     print(" - operator profile: active")
 
-    if not created:
-        print("NOTE: Existing-user password was not changed.")
+    print(" - password synchronized: yes")
 
     return 0
 
