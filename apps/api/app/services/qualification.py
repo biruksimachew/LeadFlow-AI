@@ -171,32 +171,38 @@ def calculate_completeness(
     lead: NormalizedLead,
 ) -> str:
 
-    important_values = [
-        lead.full_name,
-        (
+    checks = [
+        bool(
+            lead.full_name
+            and lead.full_name.strip()
+        ),
+        bool(
             lead.email_normalized
             or lead.phone_e164
         ),
-        lead.service_type,
-        lead.location_raw,
-        lead.urgency,
+        bool(lead.service_type),
+        bool(
+            lead.location_raw
+            and lead.location_raw.strip()
+        ),
+
+        # "unknown" is a valid input value,
+        # but it does not provide usable urgency data.
+        (
+            lead.urgency.value
+            != "unknown"
+        ),
     ]
 
-    populated = sum(
-        value is not None
-        and str(value).strip() != ""
-        for value in important_values
-    )
+    populated = sum(checks)
 
-    if populated == len(important_values):
+    if populated == len(checks):
         return "complete"
 
     if populated >= 4:
         return "mostly_complete"
 
     return "partial"
-
-
 # ============================================================
 # Timeline / readiness
 # ============================================================

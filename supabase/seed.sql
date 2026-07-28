@@ -8,6 +8,8 @@
 --   docker compose exec api python scripts/provision_routing.py
 -- ============================================================
 
+
+
 insert into public.service_areas (
     zone_code,
     display_name,
@@ -60,7 +62,7 @@ values
 ),
 (
     'source_quality_points',
-    '{"website":5,"meta":4,"manual":3,"csv_test":3}'::jsonb,
+    '{"website": 5,"meta": 4,"manual": 0,"csv_test": 0}'::jsonb,
     'Configurable source quality score.',
     true
 ),
