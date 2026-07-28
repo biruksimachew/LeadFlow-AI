@@ -6,18 +6,32 @@ import { submitLeadToN8n } from "@/lib/leadflow/n8n";
 export type ServiceRequestState = {
   success: boolean;
   error: string | null;
+
   leadId: string | null;
+  intakeId: string | null;
+  correlationId: string | null;
 };
 
 const emptyState: ServiceRequestState = {
   success: false,
   error: null,
+
   leadId: null,
+  intakeId: null,
+  correlationId: null,
 };
 
-function value(formData: FormData, key: string): string {
+function value(
+  formData: FormData,
+  key: string,
+): string {
   const item = formData.get(key);
-  return typeof item === "string" ? item.trim() : "";
+
+  return (
+    typeof item === "string"
+      ? item.trim()
+      : ""
+  );
 }
 
 export async function submitServiceRequest(
@@ -25,21 +39,60 @@ export async function submitServiceRequest(
   formData: FormData,
 ): Promise<ServiceRequestState> {
   try {
-    const fullName = value(formData, "full_name");
-    const email = value(formData, "email");
-    const phone = value(formData, "phone");
-    const serviceType = value(formData, "service_type");
-    const location = value(formData, "location");
-    const urgency = value(formData, "urgency");
-    const message = value(formData, "message");
-    const preferredContact = value(formData, "preferred_contact") || "unknown";
+    const fullName = value(
+      formData,
+      "full_name",
+    );
+    const email = value(
+      formData,
+      "email",
+    );
+    const phone = value(
+      formData,
+      "phone",
+    );
+    const serviceType = value(
+      formData,
+      "service_type",
+    );
+    const location = value(
+      formData,
+      "location",
+    );
+    const urgency = value(
+      formData,
+      "urgency",
+    );
+    const message = value(
+      formData,
+      "message",
+    );
+    const preferredContact = (
+      value(
+        formData,
+        "preferred_contact",
+      )
+      || "unknown"
+    );
 
-    if (!fullName || !serviceType || !location || !urgency) {
-      return { ...emptyState, error: "Complete all required fields." };
+    if (
+      !fullName
+      || !serviceType
+      || !location
+      || !urgency
+    ) {
+      return {
+        ...emptyState,
+        error: "Complete all required fields.",
+      };
     }
 
     if (!email && !phone) {
-      return { ...emptyState, error: "Provide an email address or phone number." };
+      return {
+        ...emptyState,
+        error:
+          "Provide an email address or phone number.",
+      };
     }
 
     const result = await submitLeadToN8n(
@@ -52,8 +105,12 @@ export async function submitServiceRequest(
         urgency,
         message: message || null,
         source: "website",
-        preferred_contact: preferredContact,
-        consent_marketing: formData.get("consent_marketing") === "on",
+        preferred_contact:
+          preferredContact,
+        consent_marketing:
+          formData.get(
+            "consent_marketing",
+          ) === "on",
       },
       `website-${randomUUID()}`,
     );
@@ -61,12 +118,20 @@ export async function submitServiceRequest(
     return {
       success: true,
       error: null,
-      leadId: typeof result.lead_id === "string" ? result.lead_id : null,
+
+      leadId: result.lead_id,
+      intakeId: result.intake_id,
+      correlationId:
+        result.correlation_id,
     };
   } catch (error) {
     return {
       ...emptyState,
-      error: error instanceof Error ? error.message : "Request submission failed.",
+      error: (
+        error instanceof Error
+          ? error.message
+          : "Request submission failed."
+      ),
     };
   }
 }

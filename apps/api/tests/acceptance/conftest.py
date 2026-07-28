@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -31,6 +32,9 @@ class AcceptanceHarness:
         self.database_url = os.getenv("DATABASE_URL")
         self.orchestrator_token = os.getenv(
             "N8N_INTERNAL_API_TOKEN",
+        )
+        self.ingress_token = os.getenv(
+            "LEADFLOW_INGRESS_TOKEN",
         )
         self.default_owner_id = os.getenv(
             "HUBSPOT_DEFAULT_OWNER_ID",
@@ -162,21 +166,83 @@ class AcceptanceHarness:
         response.raise_for_status()
         return response.json()
 
+    def n8n_response(
+        self,
+        payload: dict,
+        *,
+        idempotency_key: str,
+        include_ingress_token: bool = True,
+    ) -> httpx.Response:
+        headers = {
+            "Idempotency-Key": idempotency_key,
+        }
+
+        if include_ingress_token:
+            if not self.ingress_token:
+                raise RuntimeError(
+                    "LEADFLOW_INGRESS_TOKEN is required "
+                    "for authenticated n8n acceptance tests.",
+                )
+
+            headers[
+                "X-LeadFlow-Ingress-Token"
+            ] = self.ingress_token
+
+        return self.client.post(
+            self.n8n_webhook_url,
+            headers=headers,
+            json=payload,
+        )
+
     def n8n(
         self,
         payload: dict,
         *,
         idempotency_key: str,
     ) -> dict:
-        response = self.client.post(
-            self.n8n_webhook_url,
-            headers={
-                "Idempotency-Key": idempotency_key,
-            },
-            json=payload,
+        response = self.n8n_response(
+            payload,
+            idempotency_key=idempotency_key,
         )
         response.raise_for_status()
         return response.json()
+
+    def wait_until(
+        self,
+        probe,
+        *,
+        description: str,
+        timeout_seconds: float = 45.0,
+        interval_seconds: float = 0.25,
+    ):
+        deadline = (
+            time.monotonic()
+            + timeout_seconds
+        )
+
+        last_result = None
+        last_error: Exception | None = None
+
+        while time.monotonic() < deadline:
+            try:
+                last_result = probe()
+                if last_result:
+                    return last_result
+            except Exception as exc:
+                last_error = exc
+
+            time.sleep(interval_seconds)
+
+        detail = (
+            f" Last error: {last_error}"
+            if last_error
+            else f" Last result: {last_result!r}"
+        )
+
+        raise AssertionError(
+            f"Timed out waiting for {description}."
+            f"{detail}"
+        )
 
     async def _fetchrow(
         self,

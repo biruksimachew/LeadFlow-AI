@@ -5,18 +5,25 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "leadflow-intake",
-        "responseMode": "lastNode",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1088,
-        96
+        -1408,
+        224
       ],
-      "id": "29fa6fb1-88cc-458e-92c6-a5939c863b4b",
+      "id": "3fcd21f7-d6a7-4daa-aae9-0d24aba2c20f",
       "name": "Lead Intake Webhook",
-      "webhookId": "c1f355b0-1177-4f44-a59b-e1919b474e19"
+      "webhookId": "6b7cf0b2-a0c0-4656-9677-8ed7410dc54f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pEeaOYLkMGKxF7oN",
+          "name": "LeadFlow Public Ingress"
+        }
+      }
     },
     {
       "parameters": {
@@ -31,23 +38,22 @@
             },
             {
               "name": "Idempotency-Key",
-              "value": "={{ $json.headers['idempotency-key'] || ('n8n-' + $execution.id) }}"
+              "value": "={{ $json.headers[\"idempotency-key\"] }}"
             }
           ]
         },
         "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify($json.body) }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -848,
-        96
+        -1168,
+        224
       ],
-      "id": "24f29ba8-d026-486a-840f-7907118532cf",
+      "id": "3b6b9429-4498-41f4-8a80-87f49fceddf3",
       "name": "1 - Intake Normalize Dedupe"
     },
     {
@@ -78,10 +84,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -608,
-        96
+        -720,
+        224
       ],
-      "id": "6eecc8be-23cb-4a0b-adb1-1ee57d58df85",
+      "id": "a57b530d-39bb-47d1-9ab0-c17b4b1f2b87",
       "name": "Continue After Intake?"
     },
     {
@@ -102,10 +108,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -368,
-        -32
+        -480,
+        96
       ],
-      "id": "e9a510b2-4f1f-44fe-84a7-40f4b99f6026",
+      "id": "0ecb6d4c-7f8f-4c50-842c-a5e78d8dbac2",
       "name": "2 - Qualify + AI"
     },
     {
@@ -136,10 +142,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -128,
-        -32
+        -240,
+        96
       ],
-      "id": "3d526dd0-1282-4f1f-96bf-a8973d305cc5",
+      "id": "9bf774ea-15e8-4b50-be7e-8b9525ff5700",
       "name": "Continue After Qualification?"
     },
     {
@@ -160,10 +166,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        112,
-        -128
+        0,
+        0
       ],
-      "id": "98109943-2a01-4b95-b0f7-fd1b22ba7042",
+      "id": "a2119c56-4eb7-4938-8715-59ef97021299",
       "name": "3 - Route Owner"
     },
     {
@@ -184,10 +190,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        352,
-        -128
+        240,
+        0
       ],
-      "id": "2568cfe4-7a88-4bc1-9d52-e778f3b7655f",
+      "id": "214136f4-191e-4c93-9366-cca886210d28",
       "name": "4 - Sync CRM"
     },
     {
@@ -208,10 +214,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        592,
-        -128
+        480,
+        0
       ],
-      "id": "e47e880f-8265-470c-bd97-3861892ab323",
+      "id": "4ce1e62e-9a2d-457f-97c7-9daa0a8b0df8",
       "name": "5 - Customer + Staff Actions"
     },
     {
@@ -222,10 +228,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        832,
-        -128
+        720,
+        0
       ],
-      "id": "16048702-a1ae-40fd-bd8c-883f53013c97",
+      "id": "40c579d5-7bd1-40cb-856e-9ae1a3b48b4b",
       "name": "Completed"
     },
     {
@@ -236,10 +242,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -368,
-        256
+        -480,
+        384
       ],
-      "id": "5938439a-5339-4ee6-82f7-4dc5e132a3d8",
+      "id": "19c8cd46-8cd6-4577-a3c9-0fc10ab8cadd",
       "name": "Duplicate / Intake Stop"
     },
     {
@@ -250,11 +256,28 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        112,
-        176
+        0,
+        304
       ],
-      "id": "9145db2d-b9ee-47f3-9d1e-7f5cafb22245",
+      "id": "a029284c-7b11-4df7-977b-1998debfe4f5",
       "name": "Review / Qualification Stop"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -960,
+        224
+      ],
+      "id": "0a4af912-261d-4fdc-a4b4-4f5b2007d109",
+      "name": "Accepted - Return Intake Receipt"
     }
   ],
   "pinData": {},
@@ -274,7 +297,7 @@
       "main": [
         [
           {
-            "node": "Continue After Intake?",
+            "node": "Accepted - Return Intake Receipt",
             "type": "main",
             "index": 0
           }
@@ -360,6 +383,17 @@
           }
         ]
       ]
+    },
+    "Accepted - Return Intake Receipt": {
+      "main": [
+        [
+          {
+            "node": "Continue After Intake?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -367,11 +401,12 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "d27c6365-43a5-4249-8bc2-6c7f69008bcf",
+  "versionId": "e0070c80-000c-4992-b903-ea8570403c02",
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "ed58daf4f53b614afcc95e67db3a59d51aca66bbedf3d1ba35c203d6f45dc0c5"
   },
   "nodeGroups": [],
-  "id": "baaGniUjYie1vpjZ",
+  "id": "6v8JGpWy7TEnXYGX",
   "tags": []
 }

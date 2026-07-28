@@ -12,35 +12,131 @@ def key(prefix: str) -> str:
     return f"accept-live-{prefix}-{uuid4().hex}"
 
 
-def test_09_n8n_happy_path_completes(
+def test_09_n8n_rejects_missing_ingress_token(
     harness,
     require_live,
 ) -> None:
     payload = harness.lead_payload(
-        prefix="n8n-happy",
+        prefix="n8n-no-auth",
     )
 
-    result = harness.n8n(
+    response = harness.n8n_response(
         payload,
-        idempotency_key=key("happy"),
+        idempotency_key=key("no-auth"),
+        include_ingress_token=False,
     )
 
-    assert result["success"] is True
+    assert response.status_code == 403
+
+    lead = harness.fetchrow(
+        """
+        select id
+        from public.leads
+        where email_normalized = $1;
+        """,
+        payload["email"].lower(),
+    )
+
+    assert lead is None
+
+
+def test_10_n8n_acknowledges_then_completes_asynchronously(
+    harness,
+    require_live,
+) -> None:
+    payload = harness.lead_payload(
+        prefix="n8n-async",
+    )
+
+    response = harness.n8n_response(
+        payload,
+        idempotency_key=key("async"),
+    )
+
+    assert response.status_code == 202
     assert (
-        result["workflow_outcome"]
-        == "COMPLETED"
-    )
-    assert result["completed"] is True
-    assert (
-        result["status"]
-        in {
-            "QUALIFIED_WARM",
-            "QUALIFIED_HOT",
-        }
+        response.elapsed.total_seconds()
+        < 3.0
     )
 
+    receipt = response.json()
 
-def test_10_n8n_duplicate_branch_stops(
+    assert receipt["success"] is True
+    assert receipt["stage"] == "INTAKE"
+    assert receipt["status"] == "RECEIVED"
+    assert receipt["continue_processing"] is True
+
+    assert receipt["lead_id"]
+    assert receipt["intake_id"]
+    assert receipt["correlation_id"]
+
+    assert "workflow_outcome" not in receipt
+    assert "completed" not in receipt
+
+    def completed_probe():
+        row = harness.fetchrow(
+            """
+            select
+                l.status,
+                l.assigned_owner_id,
+                l.crm_sync_status,
+                l.hubspot_contact_id,
+                l.hubspot_deal_id,
+                (
+                    select count(*)::int
+                    from public.communications c
+                    where c.lead_id = l.id
+                ) as communication_count
+            from public.leads l
+            where l.id = $1::uuid;
+            """,
+            receipt["lead_id"],
+        )
+
+        if row is None:
+            return None
+
+        if (
+            row["status"]
+            not in {
+                "QUALIFIED_WARM",
+                "QUALIFIED_HOT",
+            }
+        ):
+            return None
+
+        if row["assigned_owner_id"] is None:
+            return None
+
+        if row["crm_sync_status"] != "SUCCEEDED":
+            return None
+
+        if row["hubspot_contact_id"] is None:
+            return None
+
+        if row["hubspot_deal_id"] is None:
+            return None
+
+        if row["communication_count"] < 1:
+            return None
+
+        return row
+
+    completed = harness.wait_until(
+        completed_probe,
+        description=(
+            "the acknowledged lead to finish "
+            "routing, CRM sync, and actions"
+        ),
+    )
+
+    assert completed["status"] in {
+        "QUALIFIED_WARM",
+        "QUALIFIED_HOT",
+    }
+
+
+def test_11_n8n_duplicate_branch_stops(
     harness,
     require_live,
 ) -> None:
@@ -53,28 +149,28 @@ def test_10_n8n_duplicate_branch_stops(
         idempotency_key=key("dup-seed"),
     )
 
-    assert (
-        first["workflow_outcome"]
-        == "COMPLETED"
-    )
+    assert first["stage"] == "INTAKE"
+    assert first["continue_processing"] is True
+    assert first["duplicate"] is False
 
     duplicate = harness.n8n(
         payload,
         idempotency_key=key("dup-check"),
     )
 
+    assert duplicate["stage"] == "INTAKE"
     assert duplicate["duplicate"] is True
     assert (
         duplicate["continue_processing"]
         is False
     )
     assert (
-        duplicate["workflow_outcome"]
-        == "INTAKE_STOPPED"
+        duplicate["lead_id"]
+        == first["lead_id"]
     )
 
 
-def test_11_n8n_review_branch_stops_before_crm(
+def test_12_n8n_review_branch_stops_before_crm(
     harness,
     require_live,
 ) -> None:
@@ -88,28 +184,42 @@ def test_11_n8n_review_branch_stops_before_crm(
         ),
     )
 
-    result = harness.n8n(
+    receipt = harness.n8n(
         payload,
         idempotency_key=key("review"),
     )
 
-    assert result["status"] == "REVIEW_REQUIRED"
-    assert result["review_required"] is True
-    assert (
-        result["workflow_outcome"]
-        == "REVIEW_REQUIRED"
-    )
+    assert receipt["stage"] == "INTAKE"
+    assert receipt["continue_processing"] is True
 
-    lead = harness.fetchrow(
-        """
-        select
-            assigned_owner_id,
-            hubspot_contact_id,
-            hubspot_deal_id
-        from public.leads
-        where id = $1::uuid;
-        """,
-        result["lead_id"],
+    def review_probe():
+        row = harness.fetchrow(
+            """
+            select
+                status,
+                assigned_owner_id,
+                hubspot_contact_id,
+                hubspot_deal_id
+            from public.leads
+            where id = $1::uuid;
+            """,
+            receipt["lead_id"],
+        )
+
+        if (
+            row is None
+            or row["status"]
+            != "REVIEW_REQUIRED"
+        ):
+            return None
+
+        return row
+
+    lead = harness.wait_until(
+        review_probe,
+        description=(
+            "the lead to enter human review"
+        ),
     )
 
     assert lead["assigned_owner_id"] is None
@@ -117,7 +227,7 @@ def test_11_n8n_review_branch_stops_before_crm(
     assert lead["hubspot_deal_id"] is None
 
 
-def test_12_crm_replay_preserves_provider_ids(
+def test_13_crm_replay_preserves_provider_ids(
     harness,
     require_live,
 ) -> None:
@@ -186,7 +296,7 @@ def test_12_crm_replay_preserves_provider_ids(
     )
 
 
-def test_13_action_replay_does_not_duplicate_communications(
+def test_14_action_replay_does_not_duplicate_communications(
     harness,
     require_live,
 ) -> None:
@@ -270,7 +380,7 @@ def test_13_action_replay_does_not_duplicate_communications(
     assert first == second
 
 
-def test_14_cold_without_consent_never_sends_nurture(
+def test_15_cold_without_consent_never_sends_nurture(
     harness,
     require_live,
 ) -> None:
@@ -335,7 +445,7 @@ def test_14_cold_without_consent_never_sends_nurture(
     )
 
 
-def test_15_n8n_outside_area_stops_without_side_effects(
+def test_16_n8n_outside_area_stops_without_side_effects(
     harness,
     require_live,
 ) -> None:
@@ -344,27 +454,42 @@ def test_15_n8n_outside_area_stops_without_side_effects(
         location="South District, 99999",
     )
 
-    result = harness.n8n(
+    receipt = harness.n8n(
         payload,
         idempotency_key=key("outside"),
     )
 
-    assert result["status"] == "DISQUALIFIED"
-    assert (
-        result["continue_processing"]
-        is False
-    )
+    assert receipt["stage"] == "INTAKE"
+    assert receipt["continue_processing"] is True
 
-    lead = harness.fetchrow(
-        """
-        select
-            assigned_owner_id,
-            hubspot_contact_id,
-            hubspot_deal_id
-        from public.leads
-        where id = $1::uuid;
-        """,
-        result["lead_id"],
+    def disqualified_probe():
+        row = harness.fetchrow(
+            """
+            select
+                status,
+                assigned_owner_id,
+                hubspot_contact_id,
+                hubspot_deal_id
+            from public.leads
+            where id = $1::uuid;
+            """,
+            receipt["lead_id"],
+        )
+
+        if (
+            row is None
+            or row["status"]
+            != "DISQUALIFIED"
+        ):
+            return None
+
+        return row
+
+    lead = harness.wait_until(
+        disqualified_probe,
+        description=(
+            "the lead to become disqualified"
+        ),
     )
 
     assert lead["assigned_owner_id"] is None
