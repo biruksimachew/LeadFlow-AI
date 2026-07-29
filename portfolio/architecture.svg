@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#315B9B"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="900" fill="#F5F8FC"/>
+  <text x="80" y="75" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#0F172A">LeadFlow AI - System Architecture</text>
+  <text x="80" y="115" font-family="Arial, sans-serif" font-size="22" fill="#475569">Secure intake, asynchronous orchestration, CRM automation, and human-in-the-loop operations</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="190" rx="18" width="260" height="110" fill="#FFFFFF" stroke="#B8C7DC"/>
+    <text x="200" y="230" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Lead Sources</text>
+    <text x="200" y="265" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Website - Meta Simulator</text>
+    <text x="200" y="290" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Manual Entry - CSV</text>
+
+    <rect x="410" y="190" rx="18" width="270" height="110" fill="#EAF2FF" stroke="#7CA3D8"/>
+    <text x="545" y="230" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Secure Ingress</text>
+    <text x="545" y="265" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Next.js server action</text>
+    <text x="545" y="290" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Header-authenticated n8n webhook</text>
+
+    <rect x="760" y="160" rx="18" width="330" height="170" fill="#FFFFFF" stroke="#7CA3D8"/>
+    <text x="925" y="205" text-anchor="middle" font-family="Arial" font-size="26" font-weight="700" fill="#0F172A">n8n Orchestrator</text>
+    <text x="925" y="245" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">202 intake acknowledgement</text>
+    <text x="925" y="275" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Qualification - Routing - CRM</text>
+    <text x="925" y="305" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Customer and staff actions</text>
+
+    <rect x="1170" y="190" rx="18" width="340" height="110" fill="#EAF8F2" stroke="#6BB99A"/>
+    <text x="1340" y="230" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">FastAPI Services</text>
+    <text x="1340" y="265" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Validated internal endpoints</text>
+    <text x="1340" y="290" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Idempotent stage execution</text>
+
+    <rect x="120" y="470" rx="18" width="300" height="120" fill="#FFFFFF" stroke="#B8C7DC"/>
+    <text x="270" y="510" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Supabase / PostgreSQL</text>
+    <text x="270" y="545" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Canonical leads - audit trail</text>
+    <text x="270" y="575" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">RLS - retries - communications</text>
+
+    <rect x="510" y="470" rx="18" width="270" height="120" fill="#FFF7E8" stroke="#D9A85C"/>
+    <text x="645" y="510" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Decision Engine</text>
+    <text x="645" y="545" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Deterministic hard rules</text>
+    <text x="645" y="575" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">AI-assisted interpretation</text>
+
+    <rect x="870" y="470" rx="18" width="270" height="120" fill="#FFFFFF" stroke="#B8C7DC"/>
+    <text x="1005" y="510" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">HubSpot CRM</text>
+    <text x="1005" y="545" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Contact and deal sync</text>
+    <text x="1005" y="575" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Owner and pipeline mapping</text>
+
+    <rect x="1230" y="470" rx="18" width="270" height="120" fill="#FFFFFF" stroke="#B8C7DC"/>
+    <text x="1365" y="510" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Action Providers</text>
+    <text x="1365" y="545" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Email - Slack - SMS mock</text>
+    <text x="1365" y="575" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Booking links and alerts</text>
+
+    <rect x="270" y="700" rx="18" width="360" height="120" fill="#EAF2FF" stroke="#7CA3D8"/>
+    <text x="450" y="740" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Operations Dashboard</text>
+    <text x="450" y="775" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Metrics - search - audit - review</text>
+    <text x="450" y="805" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Workflow and provider visibility</text>
+
+    <rect x="760" y="700" rx="18" width="360" height="120" fill="#FFF0F0" stroke="#D27D7D"/>
+    <text x="940" y="740" text-anchor="middle" font-family="Arial" font-size="24" font-weight="700" fill="#0F172A">Reliability Layer</text>
+    <text x="940" y="775" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Automatic retries - dead letter</text>
+    <text x="940" y="805" text-anchor="middle" font-family="Arial" font-size="18" fill="#475569">Audited manual recovery</text>
+  </g>
+
+  <g stroke="#315B9B" stroke-width="5" fill="none" marker-end="url(#arrow)">
+    <path d="M330 245 H410"/>
+    <path d="M680 245 H760"/>
+    <path d="M1090 245 H1170"/>
+    <path d="M1340 300 V420 H420"/>
+    <path d="M420 530 H510"/>
+    <path d="M780 530 H870"/>
+    <path d="M1140 530 H1230"/>
+    <path d="M270 590 V700"/>
+    <path d="M645 590 V650 H450 V700"/>
+    <path d="M1365 590 V650 H940 V700"/>
+  </g>
+
+  <rect x="1230" y="720" rx="14" width="270" height="80" fill="#FFFFFF" stroke="#B8C7DC"/>
+  <text x="1365" y="752" text-anchor="middle" font-family="Arial" font-size="18" font-weight="700" fill="#0F172A">Security boundaries</text>
+  <text x="1365" y="780" text-anchor="middle" font-family="Arial" font-size="16" fill="#475569">Public ingress token + internal token</text>
+</svg>
